@@ -132,7 +132,8 @@ wss.on("connection",(ws)=>{
       if (!okPass) return send(ws,{type:"error",error:"Wrong passkey"});
       const id=makeId();
 ws.sender = (msg.sender || "User").toString().slice(0, 20);
-pending.set(id, { ws, roomId: msg.roomId, sender: ws.sender });      broadcastAdmins(msg.roomId,{type:"join-request",requestId:id,sender:msg.sender});
+pending.set(id, { ws, roomId: msg.roomId, sender: ws.sender });     
+      broadcastAdmins(msg.roomId,{type:"join-request",requestId:id,sender:msg.sender});
       send(ws,{type:"waiting"});
       return;
     }
