@@ -136,7 +136,10 @@ app.post("/api/upload", upload.single("file"), async (req, res) => {
 
     // Allow only images/videos
     const mime = (req.file.mimetype || "").toLowerCase();
-    const isOk = mime.startsWith("image/") || mime.startsWith("video/");
+    const isOk =
+  mime.startsWith("image/") ||
+  mime.startsWith("video/") ||
+  mime.startsWith("audio/");
     if (!isOk) {
       try { fs.unlinkSync(req.file.path); } catch {}
       return res.status(400).json({ error: "Only image/video allowed" });
