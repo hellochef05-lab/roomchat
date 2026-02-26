@@ -86,7 +86,6 @@
     ws.send(JSON.stringify({ type:"chat", text:t }));
     document.getElementById("msg").value = "";
   };
-</script>
   document.getElementById("sendFile").onclick = async () => {
   const fileInput = document.getElementById("file");
   if (!fileInput.files || !fileInput.files[0]) return alert("Choose a file first");
@@ -113,5 +112,6 @@
     alert("Upload error");
   }
 };
-</body>
+</script>
+  </body>
 </html>
