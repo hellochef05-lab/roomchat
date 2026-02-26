@@ -24,6 +24,9 @@
   <input id="msg" placeholder="Type message..." />
   <button id="send" disabled>Send</button>
 
+  <h3>Send Photo/Video</h3>
+<input id="file" type="file" accept="image/*,video/*">
+<button id="sendFile">Send Photo/Video</button>
 <script>
   const chatBox = document.getElementById("chat");
   const log = (t) => { chatBox.innerHTML += t + "<br>"; chatBox.scrollTop = chatBox.scrollHeight; };
@@ -52,6 +55,18 @@
     };
 
     ws.onmessage = (e) => {
+      if (msg.type === "file") {
+  // show who sent it
+  log(msg.sender + " sent: " + (msg.name || "file"));
+
+  if ((msg.mime || "").startsWith("image/")) {
+    log('<img src="' + msg.url + '" style="max-width:100%;border-radius:10px;margin-top:6px;">');
+  } else if ((msg.mime || "").startsWith("video/")) {
+    log('<video controls playsinline style="width:100%;margin-top:6px;border-radius:10px;background:#000;">' +
+        '<source src="' + msg.url + '" type="' + msg.mime + '">' +
+        '</video>');
+  }
+}
       const msg = JSON.parse(e.data);
 
       if (msg.type === "error") return alert(msg.error);
@@ -72,5 +87,31 @@
     document.getElementById("msg").value = "";
   };
 </script>
+  document.getElementById("sendFile").onclick = async () => {
+  const fileInput = document.getElementById("file");
+  if (!fileInput.files || !fileInput.files[0]) return alert("Choose a file first");
+
+  const roomId = document.getElementById("room").value.trim();
+  const roomPassword = document.getElementById("pass").value;
+  const sender = (document.getElementById("sender").value.trim() || "User").slice(0, 20);
+
+  if (!roomId || !roomPassword) return alert("Enter room and passkey first");
+
+  const fd = new FormData();
+  fd.append("roomId", roomId);
+  fd.append("roomPassword", roomPassword);
+  fd.append("sender", sender);
+  fd.append("file", fileInput.files[0]);
+
+  try {
+    const r = await fetch("/api/upload", { method: "POST", body: fd });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) return alert(j.error || "Upload failed");
+    alert("Uploaded ✅");
+    fileInput.value = "";
+  } catch (e) {
+    alert("Upload error");
+  }
+};
 </body>
 </html>
