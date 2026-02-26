@@ -1,3 +1,5 @@
+const fs = require("fs");
+const multer = require("multer");
 const express = require("express");
 const path = require("path");
 const http = require("http");
@@ -9,6 +11,19 @@ const crypto = require("crypto");
 const app = express();
 app.use(express.json());
 app.use(express.static(path.join(__dirname, "public")));
+// --- Uploads folder (Render free = temporary storage) ---
+const UPLOAD_DIR = path.join(__dirname, "uploads");
+if (!fs.existsSync(UPLOAD_DIR)) fs.mkdirSync(UPLOAD_DIR, { recursive: true });
+
+// serve uploaded files
+app.use("/uploads", express.static(UPLOAD_DIR));
+
+const upload = multer({
+  dest: UPLOAD_DIR,
+  limits: {
+    fileSize: 25 * 1024 * 1024 // 25 MB
+  }
+});
 
 const server = http.createServer(app);
 const wss = new WebSocket.Server({ server });
@@ -105,6 +120,52 @@ app.post("/api/admin/action", async (req,res)=>{
   res.status(400).json({error:"Unknown action"});
 });
 
+// Upload photo/video and broadcast to room
+app.post("/api/upload", upload.single("file"), async (req, res) => {
+  try {
+    const { roomId, roomPassword, sender } = req.body || {};
+    if (!req.file) return res.status(400).json({ error: "No file" });
+    if (!roomId || !roomPassword) return res.status(400).json({ error: "Missing room/password" });
+
+    const room = await getRoom(roomId);
+    if (!room) return res.status(404).json({ error: "Room not found" });
+    if (!room.enabled) return res.status(403).json({ error: "Room disabled" });
+
+    const okPass = await bcrypt.compare(roomPassword, room.roomPassHash);
+    if (!okPass) return res.status(403).json({ error: "Wrong passkey" });
+
+    // Allow only images/videos
+    const mime = (req.file.mimetype || "").toLowerCase();
+    const isOk = mime.startsWith("image/") || mime.startsWith("video/");
+    if (!isOk) {
+      try { fs.unlinkSync(req.file.path); } catch {}
+      return res.status(400).json({ error: "Only image/video allowed" });
+    }
+
+    // Rename file to keep extension if possible
+    const original = req.file.originalname || "file";
+    const ext = path.extname(original).slice(0, 10) || ""; // small safety
+    const newName = req.file.filename + ext;
+    const newPath = path.join(UPLOAD_DIR, newName);
+    try { fs.renameSync(req.file.path, newPath); } catch {}
+
+    const fileUrl = `/uploads/${newName}`;
+    const safeSender = (sender || "User").toString().slice(0, 20);
+
+    // Broadcast to everyone online in that room
+    broadcastRoom(roomId, {
+      type: "file",
+      sender: safeSender,
+      url: fileUrl,
+      mime,
+      name: original
+    });
+
+    return res.json({ ok: true, url: fileUrl });
+  } catch (e) {
+    return res.status(500).json({ error: "Upload failed" });
+  }
+});
 wss.on("connection",(ws)=>{
   ws.roomId=null;
   ws.mode=null;
