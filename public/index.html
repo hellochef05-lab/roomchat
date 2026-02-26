@@ -1,0 +1,76 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>RoomChat</title>
+  <style>
+    body { font-family: sans-serif; padding: 12px; max-width: 560px; margin: 0 auto; }
+    input, button { width: 100%; padding: 12px; font-size: 16px; margin: 6px 0; }
+    #chat { background:#f2f2f2; padding:10px; border-radius:10px; height:240px; overflow:auto; }
+  </style>
+</head>
+<body>
+  <h2>RoomChat</h2>
+  <p>Enter room + passkey, then wait for admin approval.</p>
+
+  <input id="sender" placeholder="Your name (optional)" />
+  <input id="room" placeholder="Room number" />
+  <input id="pass" placeholder="Room passkey" type="password" />
+  <button id="request">Request to Join</button>
+
+  <h3>Chat</h3>
+  <div id="chat"></div>
+  <input id="msg" placeholder="Type message..." />
+  <button id="send" disabled>Send</button>
+
+<script>
+  const chatBox = document.getElementById("chat");
+  const log = (t) => { chatBox.innerHTML += t + "<br>"; chatBox.scrollTop = chatBox.scrollHeight; };
+
+  let ws;
+
+  function wsUrl(){
+    const proto = location.protocol === "https:" ? "wss" : "ws";
+    return proto + "://" + location.host;
+  }
+
+  document.getElementById("request").onclick = () => {
+    const roomId = document.getElementById("room").value.trim();
+    const roomPassword = document.getElementById("pass").value;
+    const sender = (document.getElementById("sender").value.trim() || "User").slice(0,20);
+    if (!roomId || !roomPassword) return alert("Enter room and passkey");
+
+    chatBox.innerHTML = "";
+    log("Connecting...");
+
+    ws = new WebSocket(wsUrl());
+
+    ws.onopen = () => {
+      ws.send(JSON.stringify({ type:"request-join", roomId, roomPassword, sender }));
+      log("Request sent. Waiting for admin approval...");
+    };
+
+    ws.onmessage = (e) => {
+      const msg = JSON.parse(e.data);
+
+      if (msg.type === "error") return alert(msg.error);
+      if (msg.type === "waiting") return log("Waiting for admin approval...");
+      if (msg.type === "joined") { log("✅ Approved! You joined."); document.getElementById("send").disabled = false; }
+      if (msg.type === "chat") log(msg.sender + ": " + msg.text);
+      if (msg.type === "chat-cleared") { chatBox.innerHTML=""; log("🧹 Chat cleared by admin"); }
+      if (msg.type === "kicked") alert(msg.reason || "Disconnected");
+    };
+
+    ws.onclose = () => log("Disconnected.");
+  };
+
+  document.getElementById("send").onclick = () => {
+    const t = document.getElementById("msg").value.trim();
+    if (!t || !ws || ws.readyState !== 1) return;
+    ws.send(JSON.stringify({ type:"chat", text:t }));
+    document.getElementById("msg").value = "";
+  };
+</script>
+</body>
+</html>
