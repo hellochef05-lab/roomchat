@@ -3,85 +3,140 @@
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
-  <title>Room Admin</title>
+  <title>Admin</title>
   <style>
-    body { font-family: sans-serif; padding: 12px; max-width: 600px; margin: 0 auto; }
+    body { font-family: sans-serif; padding: 12px; max-width: 720px; margin: 0 auto; }
     input, button { width: 100%; padding: 12px; font-size: 16px; margin: 6px 0; }
-    .req { background:#f2f2f2; padding:10px; margin-top:10px; border-radius:10px; }
+    .row { display:flex; gap:8px; }
+    .row button { width: 33%; }
+    .box { background:#f2f2f2; padding:10px; border-radius:10px; margin-top:10px; }
+    #chat { background:#f2f2f2; padding:10px; border-radius:10px; height:220px; overflow:auto; }
   </style>
 </head>
 <body>
+  <h2>Admin</h2>
 
-<h2>Create Room</h2>
+  <h3>Create Room</h3>
+  <input id="c_room" placeholder="Room number" />
+  <input id="c_rpass" placeholder="Room passkey (users)" type="password" />
+  <input id="c_apass" placeholder="Admin password" type="password" />
+  <button id="create">Create Room</button>
 
-<input id="room" placeholder="Room number" />
-<input id="rpass" placeholder="Room passkey (users will enter this)" type="password"/>
-<input id="apass" placeholder="Admin password (only you know)" type="password"/>
+  <h3>Manage Room</h3>
+  <input id="m_room" placeholder="Room number" />
+  <input id="m_apass" placeholder="Admin password" type="password" />
+  <input id="m_name" placeholder="Admin name (ex: Admin or Akshay)" value="Admin" />
+  <button id="attach">Connect Admin (Approve + Chat)</button>
 
-<button onclick="createRoom()">Create Room</button>
+  <div class="box" id="statusBox">Not connected</div>
 
-<h2>Approve Join Requests</h2>
-<input id="manageRoom" placeholder="Room number"/>
-<input id="managePass" placeholder="Admin password" type="password"/>
-<button onclick="connectAdmin()">Connect as Admin</button>
+  <div class="row">
+    <button id="enable">Enable</button>
+    <button id="disable">Disable</button>
+    <button id="clear">Clear Chat</button>
+  </div>
 
-<div id="requests"></div>
+  <h3>Join Requests</h3>
+  <div id="requests"></div>
+
+  <h3>Admin Chat</h3>
+  <div id="chat"></div>
+  <input id="msg" placeholder="Message..." />
+  <button id="send" disabled>Send</button>
 
 <script>
-async function createRoom(){
-  const roomId=document.getElementById("room").value;
-  const roomPassword=document.getElementById("rpass").value;
-  const adminPassword=document.getElementById("apass").value;
+  async function post(url, body){
+    const r = await fetch(url, { method:"POST", headers:{ "Content-Type":"application/json" }, body: JSON.stringify(body) });
+    const j = await r.json().catch(()=> ({}));
+    if (!r.ok) throw new Error(j.error || "Failed");
+    return j;
+  }
 
-  const res=await fetch("/api/admin/create-room",{
-    method:"POST",
-    headers:{"Content-Type":"application/json"},
-    body:JSON.stringify({roomId,roomPassword,adminPassword})
-  });
-
-  const data=await res.json();
-  if(data.ok) alert("Room created!");
-  else alert(data.error);
-}
-
-let ws;
-
-function connectAdmin(){
-  const roomId=document.getElementById("manageRoom").value;
-  const adminPassword=document.getElementById("managePass").value;
-
-  ws=new WebSocket(location.origin.replace("http","ws"));
-
-  ws.onopen=()=>{
-    ws.send(JSON.stringify({
-      type:"admin-attach",
-      roomId,
-      adminPassword
-    }));
+  document.getElementById("create").onclick = async () => {
+    try {
+      await post("/api/admin/create-room", {
+        roomId: document.getElementById("c_room").value.trim(),
+        roomPassword: document.getElementById("c_rpass").value,
+        adminPassword: document.getElementById("c_apass").value
+      });
+      alert("Room created ✅");
+    } catch(e){ alert(e.message); }
   };
 
-  ws.onmessage=(e)=>{
-    const msg=JSON.parse(e.data);
+  let ws;
+  const requests = document.getElementById("requests");
+  const chat = document.getElementById("chat");
+  const log = (t) => { chat.innerHTML += t + "<br>"; chat.scrollTop = chat.scrollHeight; };
 
-    if(msg.type==="admin-attached"){
-      alert("Connected as Admin");
-    }
+  function wsUrl(){
+    const proto = location.protocol === "https:" ? "wss" : "ws";
+    return proto + "://" + location.host;
+  }
 
-    if(msg.type==="join-request"){
-      const div=document.createElement("div");
-      div.className="req";
-      div.innerHTML=
-        "<b>"+msg.sender+"</b><br>"+
-        "<button onclick='approve(\""+msg.requestId+"\")'>Approve</button>";
-      document.getElementById("requests").appendChild(div);
-    }
+  function addRequest(requestId, sender){
+    const div = document.createElement("div");
+    div.className = "box";
+    div.innerHTML = `<b>${sender}</b><br><small>${requestId}</small>
+      <div class="row" style="margin-top:8px;">
+        <button id="a_${requestId}">Approve</button>
+        <button id="d_${requestId}">Deny</button>
+        <button disabled> </button>
+      </div>`;
+    requests.appendChild(div);
+    document.getElementById("a_" + requestId).onclick = () => ws.send(JSON.stringify({ type:"approve", requestId }));
+    document.getElementById("d_" + requestId).onclick = () => ws.send(JSON.stringify({ type:"deny", requestId }));
+  }
+
+  document.getElementById("attach").onclick = async () => {
+    const roomId = document.getElementById("m_room").value.trim();
+    const adminPassword = document.getElementById("m_apass").value;
+    const sender = (document.getElementById("m_name").value.trim() || "Admin").slice(0,20);
+    if (!roomId || !adminPassword) return alert("Enter room + admin password");
+
+    requests.innerHTML = "";
+    chat.innerHTML = "";
+
+    ws = new WebSocket(wsUrl());
+    ws.onopen = () => ws.send(JSON.stringify({ type:"admin-attach", roomId, adminPassword, sender }));
+
+    ws.onmessage = async (e) => {
+      const msg = JSON.parse(e.data);
+      if (msg.type === "error") return alert(msg.error);
+      if (msg.type === "admin-attached") {
+        document.getElementById("statusBox").innerText = "Admin connected ✅";
+        document.getElementById("send").disabled = false;
+
+        // show room status
+        try {
+          const r = await post("/api/admin/rooms", { roomId, adminPassword });
+          document.getElementById("statusBox").innerText = "Room: " + r.room.id + " | Enabled: " + r.room.enabled;
+        } catch {}
+        return;
+      }
+      if (msg.type === "join-request") return addRequest(msg.requestId, msg.sender);
+      if (msg.type === "system") return log("🟦 " + msg.text);
+      if (msg.type === "chat") return log("<b>"+msg.sender+":</b> " + msg.text);
+      if (msg.type === "chat-cleared") { chat.innerHTML=""; log("🧹 cleared"); return; }
+      if (msg.type === "file") return log("<b>"+msg.sender+"</b> sent: " + (msg.name||"file"));
+    };
   };
-}
 
-function approve(id){
-  ws.send(JSON.stringify({type:"approve",requestId:id}));
-}
+  document.getElementById("send").onclick = () => {
+    const t = document.getElementById("msg").value.trim();
+    if (!t || !ws || ws.readyState !== 1) return;
+    ws.send(JSON.stringify({ type:"chat", text:t }));
+    document.getElementById("msg").value = "";
+  };
+
+  function adminAction(action){
+    const roomId = document.getElementById("m_room").value.trim();
+    const adminPassword = document.getElementById("m_apass").value;
+    return post("/api/admin/action", { roomId, adminPassword, action });
+  }
+
+  document.getElementById("enable").onclick = async () => { try{ await adminAction("enable"); alert("Enabled ✅"); }catch(e){alert(e.message);} };
+  document.getElementById("disable").onclick = async () => { try{ await adminAction("disable"); alert("Disabled ✅"); }catch(e){alert(e.message);} };
+  document.getElementById("clear").onclick = async () => { try{ await adminAction("clear-chat"); alert("Cleared ✅"); }catch(e){alert(e.message);} };
 </script>
-
 </body>
 </html>
