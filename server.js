@@ -131,8 +131,8 @@ wss.on("connection",(ws)=>{
       const okPass=await bcrypt.compare(msg.roomPassword,room.roomPassHash);
       if (!okPass) return send(ws,{type:"error",error:"Wrong passkey"});
       const id=makeId();
-      pending.set(id,{ws,roomId:msg.roomId,sender:msg.sender});
-      broadcastAdmins(msg.roomId,{type:"join-request",requestId:id,sender:msg.sender});
+ws.sender = (msg.sender || "User").toString().slice(0, 20);
+pending.set(id, { ws, roomId: msg.roomId, sender: ws.sender });      broadcastAdmins(msg.roomId,{type:"join-request",requestId:id,sender:msg.sender});
       send(ws,{type:"waiting"});
       return;
     }
