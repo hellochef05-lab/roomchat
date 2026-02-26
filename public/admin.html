@@ -1,0 +1,87 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>Room Admin</title>
+  <style>
+    body { font-family: sans-serif; padding: 12px; max-width: 600px; margin: 0 auto; }
+    input, button { width: 100%; padding: 12px; font-size: 16px; margin: 6px 0; }
+    .req { background:#f2f2f2; padding:10px; margin-top:10px; border-radius:10px; }
+  </style>
+</head>
+<body>
+
+<h2>Create Room</h2>
+
+<input id="room" placeholder="Room number" />
+<input id="rpass" placeholder="Room passkey (users will enter this)" type="password"/>
+<input id="apass" placeholder="Admin password (only you know)" type="password"/>
+
+<button onclick="createRoom()">Create Room</button>
+
+<h2>Approve Join Requests</h2>
+<input id="manageRoom" placeholder="Room number"/>
+<input id="managePass" placeholder="Admin password" type="password"/>
+<button onclick="connectAdmin()">Connect as Admin</button>
+
+<div id="requests"></div>
+
+<script>
+async function createRoom(){
+  const roomId=document.getElementById("room").value;
+  const roomPassword=document.getElementById("rpass").value;
+  const adminPassword=document.getElementById("apass").value;
+
+  const res=await fetch("/api/admin/create-room",{
+    method:"POST",
+    headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({roomId,roomPassword,adminPassword})
+  });
+
+  const data=await res.json();
+  if(data.ok) alert("Room created!");
+  else alert(data.error);
+}
+
+let ws;
+
+function connectAdmin(){
+  const roomId=document.getElementById("manageRoom").value;
+  const adminPassword=document.getElementById("managePass").value;
+
+  ws=new WebSocket(location.origin.replace("http","ws"));
+
+  ws.onopen=()=>{
+    ws.send(JSON.stringify({
+      type:"admin-attach",
+      roomId,
+      adminPassword
+    }));
+  };
+
+  ws.onmessage=(e)=>{
+    const msg=JSON.parse(e.data);
+
+    if(msg.type==="admin-attached"){
+      alert("Connected as Admin");
+    }
+
+    if(msg.type==="join-request"){
+      const div=document.createElement("div");
+      div.className="req";
+      div.innerHTML=
+        "<b>"+msg.sender+"</b><br>"+
+        "<button onclick='approve(\""+msg.requestId+"\")'>Approve</button>";
+      document.getElementById("requests").appendChild(div);
+    }
+  };
+}
+
+function approve(id){
+  ws.send(JSON.stringify({type:"approve",requestId:id}));
+}
+</script>
+
+</body>
+</html>
